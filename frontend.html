@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Live Auto Clipper</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background: radial-gradient(circle at top, #1e293b, #0f172a);
+      color: #f3f4f6;
+      min-height: 100vh;
+    }
+    .glass {
+      background: rgba(31, 41, 55, 0.7);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .btn {
+      transition: all 0.2s ease-in-out;
+      transform: translateY(0);
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+    }
+    #logs {
+      background: #0a0f1c;
+      color: #00ff95;
+      font-family: "Courier New", monospace;
+      border: 1px solid #1e293b;
+      box-shadow: inset 0 0 10px #00ff9577;
+    }
+  </style>
+</head>
+<body class="p-6 md:p-10">
+
+  <div class="max-w-5xl mx-auto">
+    <!-- Header -->
+    <header class="text-center mb-10">
+      <h1 class="text-4xl md:text-5xl font-bold text-white drop-shadow-md">🎬 YouTube Live Auto Clipper</h1>
+      <p class="text-lg text-gray-300 mt-3">Rekam segmen live stream YouTube secara otomatis & unggah ke Google Drive 🚀</p>
+    </header>
+
+    <!-- Main Card -->
+    <main class="glass rounded-2xl p-8 shadow-2xl">
+      <div id="alert-box" class="hidden p-4 mb-6 text-sm rounded-lg"></div>
+
+      <form id="control-form" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- URL -->
+        <div>
+          <label for="youtube_url" class="block mb-2 text-sm font-medium text-gray-300">🎥 URL Live Stream</label>
+          <input type="url" id="youtube_url" class="input-field w-full p-3 rounded-lg bg-gray-800 border border-gray-600 text-gray-200 focus:ring-2 focus:ring-blue-500" placeholder="https://youtube.com/live/..." required>
+        </div>
+
+        <!-- Folder ID -->
+        <div>
+          <label for="gdrive_folder_id" class="block mb-2 text-sm font-medium text-gray-300">📂 ID Folder Google Drive</label>
+          <input type="text" id="gdrive_folder_id" class="input-field w-full p-3 rounded-lg bg-gray-800 border border-gray-600 text-gray-200 focus:ring-2 focus:ring-blue-500" placeholder="Contoh: 1011SOGE..." required>
+        </div>
+
+        <!-- Duration -->
+        <div>
+          <label for="duration" class="block mb-2 text-sm font-medium text-gray-300">⏱️ Durasi Klip (detik)</label>
+          <input type="number" id="duration" class="input-field w-full p-3 rounded-lg bg-gray-800 border border-gray-600 text-gray-200 focus:ring-2 focus:ring-blue-500" value="60" min="10" required>
+        </div>
+
+        <!-- Interval -->
+        <div>
+          <label for="interval" class="block mb-2 text-sm font-medium text-gray-300">🔁 Interval Antar Klip (detik)</label>
+          <input type="number" id="interval" class="input-field w-full p-3 rounded-lg bg-gray-800 border border-gray-600 text-gray-200 focus:ring-2 focus:ring-blue-500" value="30" min="5" required>
+        </div>
+
+        <!-- Buttons -->
+        <div class="md:col-span-2 flex justify-center space-x-6 mt-6">
+          <button type="button" id="start-btn" class="btn bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-xl font-semibold shadow-lg">▶️ Mulai</button>
+          <button type="button" id="stop-btn" class="btn bg-red-600 hover:bg-red-700 text-white px-8 py-3 rounded-xl font-semibold shadow-lg" disabled>⏹️ Stop</button>
+        </div>
+      </form>
+    </main>
+
+    <!-- Logs -->
+    <section id="logs-container" class="mt-10 glass rounded-2xl p-6 shadow-xl">
+      <h2 class="text-2xl font-semibold text-white mb-4">📜 Log Proses</h2>
+      <div id="logs" class="w-full h-80 overflow-y-auto p-4 rounded-lg text-sm">Menunggu proses dimulai...</div>
+    </section>
+  </div>
+
+  <script>
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const logsDiv = document.getElementById('logs');
+    const form = document.getElementById('control-form');
+    const alertBox = document.getElementById('alert-box');
+    let statusInterval;
+
+    function showAlert(message, type = 'error') {
+      alertBox.textContent = message;
+      alertBox.classList.remove('hidden');
+      alertBox.className = type === 'error'
+        ? 'p-4 mb-6 text-sm rounded-lg bg-red-900 text-red-200'
+        : 'p-4 mb-6 text-sm rounded-lg bg-green-900 text-green-200';
+    }
+
+    function hideAlert() {
+      alertBox.classList.add('hidden');
+    }
+
+    async function updateStatus() {
+      try {
+        const response = await fetch('/status');
+        const data = await response.json();
+        if (data.logs) {
+          logsDiv.textContent += data.logs;
+          logsDiv.scrollTop = logsDiv.scrollHeight;
+        }
+      } catch (error) {
+        logsDiv.textContent += '\n⚠️ Koneksi server terputus...\n';
+        clearInterval(statusInterval);
+        setUIState('disconnected');
+      }
+    }
+
+    function setUIState(state) {
+      const inputs = form.querySelectorAll('input');
+      if (state === 'running') {
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        inputs.forEach(input => input.disabled = true);
+        logsDiv.textContent = '🚀 Memulai proses...\n';
+      } else if (state === 'stopped') {
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        inputs.forEach(input => input.disabled = false);
+      } else if (state === 'disconnected') {
+        startBtn.disabled = true;
+        stopBtn.disabled = true;
+        inputs.forEach(input => input.disabled = true);
+        showAlert('Koneksi backend terputus. Refresh halaman & pastikan server aktif.');
+      }
+    }
+
+    startBtn.addEventListener('click', async () => {
+      hideAlert();
+      const data = {
+        youtube_url: document.getElementById('youtube_url').value,
+        gdrive_folder_id: document.getElementById('gdrive_folder_id').value,
+        duration: parseInt(document.getElementById('duration').value),
+        interval: parseInt(document.getElementById('interval').value),
+      };
+      try {
+        const response = await fetch('/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        const result = await response.json();
+        if (response.ok) {
+          showAlert(result.message, 'success');
+          setUIState('running');
+          statusInterval = setInterval(updateStatus, 2000);
+        } else {
+          showAlert(result.message || 'Terjadi kesalahan.');
+        }
+      } catch {
+        showAlert('⚠️ Gagal menghubungi server.');
+      }
+    });
+
+    stopBtn.addEventListener('click', async () => {
+      hideAlert();
+      try {
+        const response = await fetch('/stop', { method: 'POST' });
+        const result = await response.json();
+        if (response.ok) {
+          showAlert(result.message, 'success');
+        } else {
+          showAlert(result.message || 'Gagal menghentikan.');
+        }
+      } catch {
+        showAlert('⚠️ Gagal menghubungi server.');
+      } finally {
+        clearInterval(statusInterval);
+        setUIState('stopped');
+      }
+    });
+
+    setUIState('stopped');
+  </script>
+</body>
+</html>
